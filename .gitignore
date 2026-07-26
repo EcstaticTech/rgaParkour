@@ -1,0 +1,52 @@
+# Maven
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# Compiled class files
+*.class
+
+# Log files
+*.log
+
+# Package Files
+*.jar
+*.war
+*.ear
+*.zip
+*.tar.gz
+
+# Virtual machine crash logs
+hs_err_pid*
+replay_pid*
+
+# IDEs
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+.classpath
+.project
+.settings/
+bin/
+.vscode/
+*.code-workspace
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test servers & runtime artifacts
+run/
+server/
+logs/
+plugins/
+*.tmp

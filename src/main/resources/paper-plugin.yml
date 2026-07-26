@@ -1,0 +1,10 @@
+name: rgaParkour
+version: 1.0.0
+main: com.ronlab.parkour.ParkourPlugin
+api-version: '26.2'
+dependencies:
+  server:
+    RonlabGameAssistant:
+      load: BEFORE
+      required: true
+      join-classpath: true

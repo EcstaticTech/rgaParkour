@@ -1,0 +1,138 @@
+package com.ronlab.parkour;
+
+import com.ronlab.parkour.config.ParkourKitConfig;
+import com.ronlab.parkour.game.ParkourSession;
+import com.ronlab.rga.api.RGASessionControl;
+import org.bukkit.Location;
+import org.bukkit.World;
+import org.bukkit.entity.Player;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
+
+import java.util.List;
+import java.util.UUID;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.*;
+
+class ParkourSessionTest {
+
+    private ParkourKitConfig config;
+    private RGASessionControl rgaControl;
+
+    @BeforeEach
+    void setUp() {
+        config = new ParkourKitConfig();
+        rgaControl = mock(RGASessionControl.class);
+    }
+
+    @Test
+    @DisplayName("Test checkpoint progression updates lastCheckpoints map")
+    void testCheckpointProgression() {
+        UUID playerUuid = UUID.randomUUID();
+        ParkourSession session = new ParkourSession("minigame_parkour_1", List.of(playerUuid), config, null);
+
+        Player player = mock(Player.class);
+        when(player.getUniqueId()).thenReturn(playerUuid);
+
+        World world = mock(World.class);
+        Location initialSpawn = new Location(world, 0, 64, 0);
+        Location checkpoint1 = new Location(world, 10, 64, 10);
+        Location checkpoint2 = new Location(world, 20, 64, 20);
+
+        when(player.getLocation()).thenReturn(initialSpawn);
+        session.startGame(List.of(player));
+
+        assertEquals(initialSpawn, session.getLastCheckpoints().get(playerUuid));
+
+        session.recordCheckpoint(player, checkpoint1);
+        assertEquals(checkpoint1, session.getLastCheckpoints().get(playerUuid));
+
+        session.recordCheckpoint(player, checkpoint2);
+        assertEquals(checkpoint2, session.getLastCheckpoints().get(playerUuid));
+    }
+
+    @Test
+    @DisplayName("Test failure reset correctly maintains checkpoint state and teleports player")
+    void testFailureResetMaintainsCheckpoint() {
+        UUID playerUuid = UUID.randomUUID();
+        ParkourSession session = new ParkourSession("minigame_parkour_1", List.of(playerUuid), config, null);
+
+        Player player = mock(Player.class);
+        when(player.getUniqueId()).thenReturn(playerUuid);
+
+        World world = mock(World.class);
+        Location spawnLoc = new Location(world, 0, 64, 0);
+        Location checkpointLoc = new Location(world, 15, 68, 15);
+
+        when(player.getLocation()).thenReturn(spawnLoc);
+        session.startGame(List.of(player));
+
+        session.recordCheckpoint(player, checkpointLoc);
+        assertEquals(checkpointLoc, session.getLastCheckpoints().get(playerUuid));
+
+        session.handleFail(player);
+
+        // Checkpoint state remains intact after fail
+        assertEquals(checkpointLoc, session.getLastCheckpoints().get(playerUuid));
+        verify(player, atLeastOnce()).teleport(eq(checkpointLoc));
+    }
+
+    @Test
+    @DisplayName("Test Party Completion win logic: transition to spectator and evaluate conclude")
+    void testPartyCompletionWinLogic() {
+        UUID p1Uuid = UUID.randomUUID();
+        UUID p2Uuid = UUID.randomUUID();
+        ParkourSession session = new ParkourSession("minigame_parkour_1", List.of(p1Uuid, p2Uuid), config, null);
+
+        Player p1 = mock(Player.class);
+        when(p1.getUniqueId()).thenReturn(p1Uuid);
+
+        Player p2 = mock(Player.class);
+        when(p2.getUniqueId()).thenReturn(p2Uuid);
+
+        World world = mock(World.class);
+        when(p1.getLocation()).thenReturn(new Location(world, 0, 64, 0));
+        when(p2.getLocation()).thenReturn(new Location(world, 0, 64, 0));
+
+        session.startGame(List.of(p1, p2));
+
+        // Player 1 finishes
+        session.handleFinish(p1, rgaControl);
+
+        assertTrue(session.getFinishTimes().containsKey(p1Uuid));
+        assertFalse(session.getFinishTimes().containsKey(p2Uuid));
+        verify(rgaControl).setSpectator(eq(p1), eq(true));
+
+        // Player 2 finishes -> Party Completion
+        session.handleFinish(p2, rgaControl);
+
+        assertTrue(session.getFinishTimes().containsKey(p2Uuid));
+        verify(rgaControl).setSpectator(eq(p2), eq(true));
+        assertEquals(2, session.getFinishTimes().size());
+    }
+
+    @Test
+    @DisplayName("Test Solo Player Completion: immediately finishes when solo player hits finish plate")
+    void testSoloPlayerCompletion() {
+        UUID soloUuid = UUID.randomUUID();
+        ParkourSession session = new ParkourSession("minigame_parkour_solo", List.of(soloUuid), config, null);
+
+        Player soloPlayer = mock(Player.class);
+        when(soloPlayer.getUniqueId()).thenReturn(soloUuid);
+
+        World world = mock(World.class);
+        when(soloPlayer.getLocation()).thenReturn(new Location(world, 0, 64, 0));
+
+        session.startGame(List.of(soloPlayer));
+        session.handleFinish(soloPlayer, rgaControl);
+
+        assertTrue(session.getFinishTimes().containsKey(soloUuid));
+        verify(rgaControl).setSpectator(eq(soloPlayer), eq(true));
+        assertEquals(1, session.getFinishTimes().size());
+    }
+}
