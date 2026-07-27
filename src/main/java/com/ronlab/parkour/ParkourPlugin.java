@@ -4,8 +4,12 @@ import com.ronlab.parkour.config.ParkourKitConfig;
 import com.ronlab.parkour.game.ParkourSessionManager;
 import com.ronlab.parkour.listener.ParkourLifecycleListener;
 import com.ronlab.parkour.listener.ParkourPlayerListener;
+import org.bukkit.configuration.file.FileConfiguration;
+import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.jspecify.annotations.NullMarked;
+
+import java.io.File;
 
 /**
  * Main JavaPlugin class for rgaParkour, a native companion plugin for Ronlab Game Assistant.
@@ -18,10 +22,20 @@ public class ParkourPlugin extends JavaPlugin {
 
     @Override
     public void onEnable() {
-        saveDefaultConfig();
+        // Ensure both settings.yml and config.yml can be loaded cleanly
+        saveResourceIfNotExists("settings.yml");
+        saveResourceIfNotExists("config.yml");
+
+        File settingsFile = new File(getDataFolder(), "settings.yml");
+        FileConfiguration config;
+        if (settingsFile.exists()) {
+            config = YamlConfiguration.loadConfiguration(settingsFile);
+        } else {
+            config = getConfig();
+        }
 
         kitConfig = new ParkourKitConfig();
-        kitConfig.loadFromConfig(getConfig(), getLogger());
+        kitConfig.loadFromConfig(config, getLogger());
 
         sessionManager = new ParkourSessionManager();
 
@@ -37,6 +51,17 @@ public class ParkourPlugin extends JavaPlugin {
             sessionManager.clearAll();
         }
         getLogger().info("rgaParkour disabled.");
+    }
+
+    public void saveResourceIfNotExists(String resourcePath) {
+        File file = new File(getDataFolder(), resourcePath);
+        if (!file.exists()) {
+            try {
+                saveResource(resourcePath, false);
+            } catch (Throwable ignored) {
+                // Ignore if resource path does not exist in JAR
+            }
+        }
     }
 
     public ParkourKitConfig getKitConfig() {
