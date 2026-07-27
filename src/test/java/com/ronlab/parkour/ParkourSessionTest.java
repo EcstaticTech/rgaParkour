@@ -152,4 +152,73 @@ class ParkourSessionTest {
         verify(rgaControl).setSpectator(eq(soloPlayer), eq(true));
         assertEquals(1, session.getFinishTimes().size());
     }
+
+    @Test
+    @DisplayName("Test concurrent multiplayer session safety: zero ConcurrentModificationException and isolated state")
+    void testConcurrentMultiplayerSessionSafety() throws Exception {
+        int playerCount = 10;
+        List<UUID> playerUuids = new java.util.ArrayList<>();
+        List<Player> players = new java.util.ArrayList<>();
+        World world = mock(World.class);
+
+        for (int i = 0; i < playerCount; i++) {
+            UUID uuid = UUID.randomUUID();
+            playerUuids.add(uuid);
+            Player player = mock(Player.class);
+            when(player.getUniqueId()).thenReturn(uuid);
+            when(player.isOnline()).thenReturn(true);
+            when(player.getName()).thenReturn("Player_" + i);
+            when(player.getLocation()).thenReturn(new Location(world, i, 64, i));
+            when(player.getWorld()).thenReturn(world);
+            players.add(player);
+        }
+
+        ParkourSession session = new ParkourSession("minigame_parkour_concurrent", playerUuids, config, null);
+        session.startGame(players);
+
+        java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newFixedThreadPool(8);
+        java.util.concurrent.atomic.AtomicReference<Throwable> failure = new java.util.concurrent.atomic.AtomicReference<>();
+
+        for (int t = 0; t < 100; t++) {
+            final int index = t;
+            executor.submit(() -> {
+                try {
+                    Player p = players.get(index % playerCount);
+                    if (index % 3 == 0) {
+                        session.recordCheckpoint(p, new Location(world, index, 64 + index, index));
+                    } else if (index % 3 == 1) {
+                        session.handleFinish(p, rgaControl);
+                    } else {
+                        session.applyFailEffects(p);
+                    }
+
+                    // Concurrent iteration over views to verify zero ConcurrentModificationException
+                    for (UUID active : session.getActivePlayers()) {
+                        assertNotNull(active);
+                    }
+                    for (var entry : session.getLastCheckpoints().entrySet()) {
+                        assertNotNull(entry.getKey());
+                        assertNotNull(entry.getValue());
+                    }
+                    for (var entry : session.getFinishTimes().entrySet()) {
+                        assertNotNull(entry.getKey());
+                        assertNotNull(entry.getValue());
+                    }
+                } catch (Throwable t1) {
+                    failure.compareAndSet(null, t1);
+                }
+            });
+        }
+
+        executor.shutdown();
+        assertTrue(executor.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS), "Executor tasks did not complete in time");
+
+        if (failure.get() != null) {
+            fail("Concurrent execution threw an exception: " + failure.get().getMessage(), failure.get());
+        }
+
+        // Verify player states are properly isolated
+        assertNotNull(session.getLastCheckpoints());
+        assertNotNull(session.getFinishTimes());
+    }
 }

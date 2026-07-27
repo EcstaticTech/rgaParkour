@@ -15,13 +15,12 @@ import org.bukkit.scheduler.BukkitTask;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 
-import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * Encapsulates match state and progression for an active procedural parkour session.
@@ -31,7 +30,7 @@ public class ParkourSession {
 
     private final String worldName;
     private final List<UUID> activePlayers;
-    private final Map<UUID, Location> lastCheckpoints = new HashMap<>();
+    private final Map<UUID, Location> lastCheckpoints = new ConcurrentHashMap<>();
     private final Map<UUID, Long> finishTimes = new ConcurrentHashMap<>();
     private final ParkourKitConfig config;
     private final @Nullable Plugin plugin;
@@ -41,7 +40,7 @@ public class ParkourSession {
 
     public ParkourSession(String worldName, @Nullable List<UUID> activePlayers, @Nullable ParkourKitConfig config, @Nullable Plugin plugin) {
         this.worldName = worldName;
-        this.activePlayers = new ArrayList<>(activePlayers != null ? activePlayers : Collections.emptyList());
+        this.activePlayers = new CopyOnWriteArrayList<>(activePlayers != null ? activePlayers : Collections.emptyList());
         this.config = config != null ? config : new ParkourKitConfig();
         this.plugin = plugin;
     }
@@ -178,12 +177,12 @@ public class ParkourSession {
     public void handleFinish(@Nullable Player player, @Nullable RGASessionControl rga) {
         if (player == null) return;
         UUID uuid = player.getUniqueId();
-        if (finishTimes.containsKey(uuid)) {
+        long finishTime = System.currentTimeMillis() - startTime;
+
+        if (finishTimes.putIfAbsent(uuid, finishTime) != null) {
             return;
         }
 
-        long finishTime = System.currentTimeMillis() - startTime;
-        finishTimes.put(uuid, finishTime);
         logDebug("Player " + player.getName() + " finished course in " + finishTime + " ms!");
 
         if (rga != null) {
@@ -211,7 +210,7 @@ public class ParkourSession {
         try {
             RGA rgaInstance = RGA.getInstance();
             if (rgaInstance != null) {
-                rgaInstance.requestSessionConclude(worldName, reason, new HashMap<>(finishTimes));
+                rgaInstance.requestSessionConclude(worldName, reason, Map.copyOf(finishTimes));
             }
         } catch (Throwable ignored) {
             // Safe fallback when RGA is not initialized in unit tests
@@ -240,15 +239,15 @@ public class ParkourSession {
     }
 
     public List<UUID> getActivePlayers() {
-        return Collections.unmodifiableList(activePlayers);
+        return List.copyOf(activePlayers);
     }
 
     public Map<UUID, Location> getLastCheckpoints() {
-        return Collections.unmodifiableMap(lastCheckpoints);
+        return Map.copyOf(lastCheckpoints);
     }
 
     public Map<UUID, Long> getFinishTimes() {
-        return Collections.unmodifiableMap(finishTimes);
+        return Map.copyOf(finishTimes);
     }
 
     public long getStartTime() {
