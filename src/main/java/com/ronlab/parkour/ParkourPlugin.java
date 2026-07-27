@@ -1,6 +1,7 @@
 package com.ronlab.parkour;
 
 import com.ronlab.parkour.config.ParkourKitConfig;
+import com.ronlab.parkour.game.ParkourScoreboardManager;
 import com.ronlab.parkour.game.ParkourSessionManager;
 import com.ronlab.parkour.listener.ParkourLifecycleListener;
 import com.ronlab.parkour.listener.ParkourPlayerListener;
@@ -19,6 +20,7 @@ public class ParkourPlugin extends JavaPlugin {
 
     private ParkourKitConfig kitConfig = new ParkourKitConfig();
     private ParkourSessionManager sessionManager = new ParkourSessionManager();
+    private ParkourScoreboardManager scoreboardManager = new ParkourScoreboardManager();
 
     @Override
     public void onEnable() {
@@ -38,15 +40,20 @@ public class ParkourPlugin extends JavaPlugin {
         kitConfig.loadFromConfig(config, getLogger());
 
         sessionManager = new ParkourSessionManager();
+        scoreboardManager = new ParkourScoreboardManager();
+        scoreboardManager.start(this, sessionManager);
 
-        getServer().getPluginManager().registerEvents(new ParkourLifecycleListener(this, sessionManager), this);
-        getServer().getPluginManager().registerEvents(new ParkourPlayerListener(sessionManager, kitConfig), this);
+        getServer().getPluginManager().registerEvents(new ParkourLifecycleListener(this, sessionManager, scoreboardManager), this);
+        getServer().getPluginManager().registerEvents(new ParkourPlayerListener(sessionManager, kitConfig, scoreboardManager), this);
 
         getLogger().info("rgaParkour v" + getDescription().getVersion() + " enabled.");
     }
 
     @Override
     public void onDisable() {
+        if (scoreboardManager != null) {
+            scoreboardManager.stop();
+        }
         if (sessionManager != null) {
             sessionManager.clearAll();
         }
@@ -70,5 +77,9 @@ public class ParkourPlugin extends JavaPlugin {
 
     public ParkourSessionManager getSessionManager() {
         return sessionManager;
+    }
+
+    public ParkourScoreboardManager getScoreboardManager() {
+        return scoreboardManager;
     }
 }

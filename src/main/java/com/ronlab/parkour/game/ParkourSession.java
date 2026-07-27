@@ -18,6 +18,7 @@ import org.jspecify.annotations.Nullable;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -28,13 +29,26 @@ import java.util.concurrent.CopyOnWriteArrayList;
 @NullMarked
 public class ParkourSession {
 
+    public enum SessionState {
+        COUNTDOWN,
+        RACING,
+        CONCLUDED
+    }
+
+    public record BlockPos(int x, int y, int z) {}
+
     private final String worldName;
     private final List<UUID> activePlayers;
     private final Map<UUID, Location> lastCheckpoints = new ConcurrentHashMap<>();
     private final Map<UUID, Long> finishTimes = new ConcurrentHashMap<>();
+    private final Map<UUID, Set<BlockPos>> discoveredCheckpoints = new ConcurrentHashMap<>();
+    private final Map<UUID, String> finishedSplitTimes = new ConcurrentHashMap<>();
     private final ParkourKitConfig config;
     private final @Nullable Plugin plugin;
 
+    private volatile SessionState state = SessionState.COUNTDOWN;
+    private volatile int countdownRemaining = 3;
+    private @Nullable BukkitTask countdownTask;
     private long startTime;
     private @Nullable BukkitTask matchTimer;
 
@@ -46,7 +60,10 @@ public class ParkourSession {
     }
 
     public void startGame(@Nullable List<Player> players) {
+        this.state = SessionState.COUNTDOWN;
+        this.countdownRemaining = 3;
         this.startTime = System.currentTimeMillis();
+
         World sessionWorld = null;
         try {
             if (Bukkit.getServer() != null) {
@@ -91,9 +108,69 @@ public class ParkourSession {
         logDebug("Starting ParkourSession for world: " + worldName + " with " + activePlayers.size() + " active player(s).");
 
         if (plugin != null && Bukkit.getScheduler() != null) {
-            long ticks = config.getMaxMatchDurationSeconds() * 20L;
-            matchTimer = Bukkit.getScheduler().runTaskLater(plugin, this::timeoutMatch, ticks);
+            countdownTask = Bukkit.getScheduler().runTaskTimer(plugin, this::tickCountdown, 0L, 20L);
+        } else {
+            // Immediate transition for headless unit test execution without Bukkit scheduler
+            startRacingForTest();
         }
+    }
+
+    private void tickCountdown() {
+        if (state != SessionState.COUNTDOWN) {
+            cancelCountdown();
+            return;
+        }
+
+        if (countdownRemaining > 0) {
+            String titleText = switch (countdownRemaining) {
+                case 3 -> "§c3";
+                case 2 -> "§e2";
+                default -> "§a1";
+            };
+            float pitch = switch (countdownRemaining) {
+                case 3 -> 1.0f;
+                case 2 -> 1.2f;
+                default -> 1.4f;
+            };
+
+            for (UUID uuid : activePlayers) {
+                try {
+                    Player p = Bukkit.getPlayer(uuid);
+                    if (p != null && p.isOnline()) {
+                        p.sendTitle(titleText, "", 0, 20, 10);
+                        p.playSound(p.getLocation(), getNoteSound(), 1.0f, pitch);
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+            countdownRemaining--;
+        } else {
+            cancelCountdown();
+            this.state = SessionState.RACING;
+            this.startTime = System.currentTimeMillis();
+
+            for (UUID uuid : activePlayers) {
+                try {
+                    Player p = Bukkit.getPlayer(uuid);
+                    if (p != null && p.isOnline()) {
+                        p.sendTitle("§b§lGO!", "", 0, 20, 10);
+                        p.playSound(p.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1.0f, 1.0f);
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+
+            if (plugin != null && Bukkit.getScheduler() != null) {
+                long ticks = config.getMaxMatchDurationSeconds() * 20L;
+                matchTimer = Bukkit.getScheduler().runTaskLater(plugin, this::timeoutMatch, ticks);
+            }
+        }
+    }
+
+    public void startRacingForTest() {
+        cancelCountdown();
+        this.state = SessionState.RACING;
+        this.startTime = System.currentTimeMillis();
     }
 
     public boolean isActivePlayer(UUID uuid) {
@@ -118,16 +195,20 @@ public class ParkourSession {
         return null;
     }
 
-    public void recordCheckpoint(@Nullable Player player, @Nullable Location loc) {
-        if (player == null || loc == null) return;
+    public boolean recordCheckpoint(@Nullable Player player, @Nullable Location loc) {
+        if (player == null || loc == null) return false;
         UUID uuid = player.getUniqueId();
         lastCheckpoints.put(uuid, loc.clone());
-        logDebug("Player " + player.getName() + " recorded checkpoint at " + loc.getBlockX() + ", " + loc.getBlockY() + ", " + loc.getBlockZ());
+        BlockPos pos = new BlockPos(loc.getBlockX(), loc.getBlockY(), loc.getBlockZ());
+        Set<BlockPos> checkpoints = discoveredCheckpoints.computeIfAbsent(uuid, k -> ConcurrentHashMap.newKeySet());
+        boolean isNew = checkpoints.add(pos);
+        logDebug("Player " + player.getName() + " recorded checkpoint at " + loc.getBlockX() + ", " + loc.getBlockY() + ", " + loc.getBlockZ() + " (New: " + isNew + ")");
         try {
             player.playSound(loc, Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.0f);
         } catch (Throwable ignored) {
             // Safe fallback for headless/unit test execution
         }
+        return isNew;
     }
 
     public void handleFail(@Nullable Player player) {
@@ -183,6 +264,12 @@ public class ParkourSession {
             return;
         }
 
+        long seconds = finishTime / 1000;
+        long mins = seconds / 60;
+        long secs = seconds % 60;
+        String formattedSplit = String.format("%02d:%02d", mins, secs);
+        finishedSplitTimes.put(uuid, formattedSplit);
+
         logDebug("Player " + player.getName() + " finished course in " + finishTime + " ms!");
 
         if (rga != null) {
@@ -199,12 +286,30 @@ public class ParkourSession {
         }
     }
 
+    public boolean hasFinished(UUID uuid) {
+        return finishTimes.containsKey(uuid);
+    }
+
+    public @Nullable String getFormattedFinishTime(UUID uuid) {
+        return finishedSplitTimes.get(uuid);
+    }
+
+    public Set<BlockPos> getDiscoveredCheckpoints(UUID uuid) {
+        Set<BlockPos> set = discoveredCheckpoints.get(uuid);
+        return set != null ? Set.copyOf(set) : Collections.emptySet();
+    }
+
+    public boolean isSpectator(UUID uuid) {
+        return hasFinished(uuid) || !isActivePlayer(uuid);
+    }
+
     public void timeoutMatch() {
         logDebug("Match timed out for world: " + worldName);
         requestSessionConclude("Match Timeout");
     }
 
     private void requestSessionConclude(String reason) {
+        this.state = SessionState.CONCLUDED;
         cancelTimer();
         logDebug("Requesting session conclusion for world: " + worldName + " (Reason: " + reason + ")");
         try {
@@ -217,7 +322,19 @@ public class ParkourSession {
         }
     }
 
+    public void cancelCountdown() {
+        if (countdownTask != null && !countdownTask.isCancelled()) {
+            try {
+                countdownTask.cancel();
+            } catch (Throwable ignored) {
+                // Safe fallback for test execution
+            }
+            countdownTask = null;
+        }
+    }
+
     public void cancelTimer() {
+        cancelCountdown();
         if (matchTimer != null && !matchTimer.isCancelled()) {
             try {
                 matchTimer.cancel();
@@ -226,6 +343,26 @@ public class ParkourSession {
             }
             matchTimer = null;
         }
+    }
+
+    public SessionState getState() {
+        return state;
+    }
+
+    public int getCountdownRemaining() {
+        return countdownRemaining;
+    }
+
+    private Sound getNoteSound() {
+        try {
+            return Sound.valueOf("BLOCK_NOTE_BLOCK_PLING");
+        } catch (Throwable ignored) {
+        }
+        try {
+            return Sound.valueOf("BLOCK_NOTE_BLOCK_HARP");
+        } catch (Throwable ignored) {
+        }
+        return Sound.ENTITY_EXPERIENCE_ORB_PICKUP;
     }
 
     private void logDebug(String message) {

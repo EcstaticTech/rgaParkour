@@ -1,6 +1,7 @@
 package com.ronlab.parkour.listener;
 
 import com.ronlab.parkour.config.ParkourKitConfig;
+import com.ronlab.parkour.game.ParkourScoreboardManager;
 import com.ronlab.parkour.game.ParkourSession;
 import com.ronlab.parkour.game.ParkourSessionManager;
 import com.ronlab.rga.RGA;
@@ -16,6 +17,7 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 
@@ -27,10 +29,16 @@ public class ParkourPlayerListener implements Listener {
 
     private final ParkourSessionManager sessionManager;
     private final ParkourKitConfig config;
+    private final @Nullable ParkourScoreboardManager scoreboardManager;
 
     public ParkourPlayerListener(ParkourSessionManager sessionManager, ParkourKitConfig config) {
+        this(sessionManager, config, null);
+    }
+
+    public ParkourPlayerListener(ParkourSessionManager sessionManager, ParkourKitConfig config, @Nullable ParkourScoreboardManager scoreboardManager) {
         this.sessionManager = sessionManager;
         this.config = config;
+        this.scoreboardManager = scoreboardManager;
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
@@ -47,13 +55,24 @@ public class ParkourPlayerListener implements Listener {
             return;
         }
 
-        // Ignore spectators or players who have already finished
-        if (player.getGameMode() == GameMode.SPECTATOR || session.getFinishTimes().containsKey(player.getUniqueId())) {
+        // Short-circuit completely for finished or spectating players to prevent fall/fluid teleports
+        if (session.hasFinished(player.getUniqueId()) || session.isSpectator(player.getUniqueId()) || player.getGameMode() == GameMode.SPECTATOR) {
             return;
         }
 
         RGASessionControl rgaControl = getRGASessionControl();
         if (rgaControl != null && rgaControl.isSpectator(player)) {
+            return;
+        }
+
+        // Movement freeze guard during COUNTDOWN (lock X/Y/Z while preserving pitch and yaw)
+        if (session.getState() == ParkourSession.SessionState.COUNTDOWN) {
+            Location from = event.getFrom();
+            Location to = event.getTo();
+            Location lockedLoc = from.clone();
+            lockedLoc.setYaw(to.getYaw());
+            lockedLoc.setPitch(to.getPitch());
+            event.setTo(lockedLoc);
             return;
         }
 
@@ -80,12 +99,18 @@ public class ParkourPlayerListener implements Listener {
         // 3. Finish block material check (e.g., HEAVY_WEIGHTED_PRESSURE_PLATE, IRON_PRESSURE_PLATE)
         if (config.isFinishMaterial(feetMat) || config.isFinishMaterial(underMat)) {
             session.handleFinish(player, rgaControl);
+            if (scoreboardManager != null) {
+                scoreboardManager.refreshSession(session);
+            }
             return;
         }
 
         // 4. Checkpoint block material check (e.g., GOLD_PRESSURE_PLATE, LIGHT_WEIGHTED_PRESSURE_PLATE)
         if (config.isCheckpointMaterial(feetMat) || config.isCheckpointMaterial(underMat)) {
-            session.recordCheckpoint(player, to);
+            boolean isNew = session.recordCheckpoint(player, to);
+            if (isNew && scoreboardManager != null) {
+                scoreboardManager.refreshSession(session);
+            }
         }
     }
 
@@ -96,6 +121,13 @@ public class ParkourPlayerListener implements Listener {
             if (sessionManager.hasSession(worldName)) {
                 event.setCancelled(true);
             }
+        }
+    }
+
+    @EventHandler
+    public void onPlayerQuit(PlayerQuitEvent event) {
+        if (scoreboardManager != null) {
+            scoreboardManager.removePlayerBoard(event.getPlayer().getUniqueId());
         }
     }
 

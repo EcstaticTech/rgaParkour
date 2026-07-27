@@ -221,4 +221,36 @@ class ParkourSessionTest {
         assertNotNull(session.getLastCheckpoints());
         assertNotNull(session.getFinishTimes());
     }
+
+    @Test
+    @DisplayName("Test SessionState transitions and finish short-circuit state")
+    void testSessionStateTransitionsAndFinishShortCircuit() {
+        UUID playerUuid = UUID.randomUUID();
+        ParkourSession session = new ParkourSession("world_state_test", List.of(playerUuid), config, null);
+
+        // Before startGame, state is COUNTDOWN
+        assertEquals(ParkourSession.SessionState.COUNTDOWN, session.getState());
+
+        Player player = mock(Player.class);
+        when(player.getUniqueId()).thenReturn(playerUuid);
+        when(player.isOnline()).thenReturn(true);
+        when(player.getName()).thenReturn("StatePlayer");
+
+        World world = mock(World.class);
+        when(player.getLocation()).thenReturn(new Location(world, 0, 64, 0));
+        when(player.getWorld()).thenReturn(world);
+
+        session.startGame(List.of(player));
+
+        // When started in unit test without Bukkit scheduler, auto-transitions to RACING
+        assertEquals(ParkourSession.SessionState.RACING, session.getState());
+        assertFalse(session.hasFinished(playerUuid));
+        assertFalse(session.isSpectator(playerUuid));
+
+        // Player finishes course
+        session.handleFinish(player, rgaControl);
+
+        assertTrue(session.hasFinished(playerUuid));
+        assertTrue(session.isSpectator(playerUuid));
+    }
 }

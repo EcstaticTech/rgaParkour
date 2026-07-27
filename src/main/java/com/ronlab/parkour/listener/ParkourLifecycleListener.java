@@ -1,6 +1,7 @@
 package com.ronlab.parkour.listener;
 
 import com.ronlab.parkour.ParkourPlugin;
+import com.ronlab.parkour.game.ParkourScoreboardManager;
 import com.ronlab.parkour.game.ParkourSession;
 import com.ronlab.parkour.game.ParkourSessionManager;
 import com.ronlab.rga.api.event.MinigameConcludeEvent;
@@ -27,10 +28,16 @@ public class ParkourLifecycleListener implements Listener {
 
     private final ParkourPlugin plugin;
     private final ParkourSessionManager sessionManager;
+    private final @Nullable ParkourScoreboardManager scoreboardManager;
 
     public ParkourLifecycleListener(ParkourPlugin plugin, ParkourSessionManager sessionManager) {
+        this(plugin, sessionManager, null);
+    }
+
+    public ParkourLifecycleListener(ParkourPlugin plugin, ParkourSessionManager sessionManager, @Nullable ParkourScoreboardManager scoreboardManager) {
         this.plugin = plugin;
         this.sessionManager = sessionManager;
+        this.scoreboardManager = scoreboardManager;
     }
 
     @EventHandler(priority = EventPriority.NORMAL)
@@ -61,6 +68,12 @@ public class ParkourLifecycleListener implements Listener {
         }
 
         session.startGame(playersInWorld);
+
+        if (scoreboardManager != null) {
+            for (Player player : playersInWorld) {
+                scoreboardManager.setupPlayerBoard(player, session);
+            }
+        }
     }
 
     @EventHandler(priority = EventPriority.NORMAL)
@@ -77,6 +90,10 @@ public class ParkourLifecycleListener implements Listener {
         session.getFinishTimes().forEach((uuid, finishTime) -> {
             event.getScores().putIfAbsent(uuid, finishTime);
         });
+
+        if (scoreboardManager != null) {
+            scoreboardManager.removeSessionScoreboards(session);
+        }
 
         session.cancelTimer();
         sessionManager.removeSession(worldName);
