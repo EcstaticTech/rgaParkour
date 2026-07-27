@@ -21,7 +21,7 @@ public class ParkourKitConfig {
     private final Set<Material> finishMaterials = new HashSet<>();
     private final Set<Material> failMaterials = new HashSet<>();
 
-    private double fallThresholdY = -10.0;
+    private double fallThresholdY = -60.0;
     private int maxMatchDurationSeconds = 300;
     private int invulnerabilitySecondsOnFail = 1;
 
@@ -38,7 +38,7 @@ public class ParkourKitConfig {
         parseMaterials(config.getStringList("parkour-kit.finish-materials"), finishMaterials, "finish", logger);
         parseMaterials(config.getStringList("parkour-kit.fail-materials"), failMaterials, "fail", logger);
 
-        this.fallThresholdY = config.getDouble("game.fall-threshold-y", -10.0);
+        this.fallThresholdY = config.getDouble("game.fall-threshold-y", -60.0);
         this.maxMatchDurationSeconds = config.getInt("game.max-match-duration-seconds", 300);
         this.invulnerabilitySecondsOnFail = config.getInt("game.invulnerability-seconds-on-fail", 1);
     }

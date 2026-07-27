@@ -10,6 +10,6 @@ parkour-kit:
     - "LAVA"
     - "WATER"
 game:
-  fall-threshold-y: -10
+  fall-threshold-y: -60
   max-match-duration-seconds: 300
   invulnerability-seconds-on-fail: 1

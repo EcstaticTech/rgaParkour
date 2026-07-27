@@ -39,6 +39,8 @@ public class ParkourLifecycleListener implements Listener {
             return;
         }
 
+        plugin.getLogger().info("[rgaParkour DEBUG] Received MinigameStartEvent for world: " + event.getWorldName());
+
         String worldName = event.getWorldName();
         List<UUID> playerUuids = event.getPlayerUuids();
 
@@ -68,6 +70,8 @@ public class ParkourLifecycleListener implements Listener {
         if (session == null) {
             return;
         }
+
+        plugin.getLogger().info("[rgaParkour DEBUG] Received MinigameConcludeEvent for world: " + worldName);
 
         // Populate scores with finish times
         session.getFinishTimes().forEach((uuid, finishTime) -> {

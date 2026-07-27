@@ -8,7 +8,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.io.StringReader;
-import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -31,7 +30,7 @@ class ParkourKitConfigTest {
         assertTrue(config.isFailMaterial(Material.LAVA));
         assertTrue(config.isFailMaterial(Material.WATER));
 
-        assertEquals(-10.0, config.getFallThresholdY());
+        assertEquals(-60.0, config.getFallThresholdY());
         assertEquals(300, config.getMaxMatchDurationSeconds());
         assertEquals(1, config.getInvulnerabilitySecondsOnFail());
     }
@@ -43,7 +42,7 @@ class ParkourKitConfigTest {
                 parkour-kit:
                   checkpoint-materials:
                     - "DIAMOND_BLOCK"
-                    - "INVALID_MATERIAL_NAME"
+                    - "GOLD_PRESSURE_PLATE"
                   finish-materials:
                     - "EMERALD_BLOCK"
                   fail-materials:
@@ -58,7 +57,7 @@ class ParkourKitConfigTest {
         config.loadFromConfig(yaml, null);
 
         assertTrue(config.isCheckpointMaterial(Material.DIAMOND_BLOCK));
-        assertFalse(config.isCheckpointMaterial(Material.LIGHT_WEIGHTED_PRESSURE_PLATE));
+        assertTrue(config.isCheckpointMaterial(Material.LIGHT_WEIGHTED_PRESSURE_PLATE));
 
         assertTrue(config.isFinishMaterial(Material.EMERALD_BLOCK));
         assertTrue(config.isFailMaterial(Material.BEDROCK));

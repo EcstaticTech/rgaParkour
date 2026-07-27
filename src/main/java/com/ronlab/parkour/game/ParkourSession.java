@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Logger;
 
 /**
  * Encapsulates match state and progression for an active procedural parkour session.
@@ -50,10 +51,13 @@ public class ParkourSession {
         if (players != null) {
             for (Player player : players) {
                 if (player != null) {
-                    lastCheckpoints.put(player.getUniqueId(), player.getLocation().clone());
+                    Location spawn = player.getLocation() != null ? player.getLocation().clone() : player.getWorld().getSpawnLocation();
+                    lastCheckpoints.put(player.getUniqueId(), spawn);
                 }
             }
         }
+
+        logDebug("Starting ParkourSession for world: " + worldName + " with " + activePlayers.size() + " active player(s).");
 
         if (plugin != null && Bukkit.getScheduler() != null) {
             long ticks = config.getMaxMatchDurationSeconds() * 20L;
@@ -61,10 +65,19 @@ public class ParkourSession {
         }
     }
 
+    public boolean isActivePlayer(UUID uuid) {
+        return activePlayers.contains(uuid);
+    }
+
+    public @Nullable Location getLastCheckpoint(UUID uuid) {
+        return lastCheckpoints.get(uuid);
+    }
+
     public void recordCheckpoint(@Nullable Player player, @Nullable Location loc) {
         if (player == null || loc == null) return;
         UUID uuid = player.getUniqueId();
         lastCheckpoints.put(uuid, loc.clone());
+        logDebug("Player " + player.getName() + " recorded checkpoint at " + loc.getBlockX() + ", " + loc.getBlockY() + ", " + loc.getBlockZ());
         try {
             player.playSound(loc, Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.0f);
         } catch (Throwable ignored) {
@@ -73,9 +86,23 @@ public class ParkourSession {
     }
 
     public void handleFail(@Nullable Player player) {
+        applyFailEffects(player);
+    }
+
+    public void applyFailEffects(@Nullable Player player) {
         if (player == null) return;
         UUID uuid = player.getUniqueId();
         Location checkpoint = lastCheckpoints.get(uuid);
+        if (checkpoint == null) {
+            try {
+                checkpoint = player.getWorld().getSpawnLocation();
+            } catch (Throwable ignored) {
+                checkpoint = player.getLocation();
+            }
+        }
+
+        logDebug("Player " + player.getName() + " failed (Y <= " + config.getFallThresholdY() + " or fluid), resetting to checkpoint.");
+
         if (checkpoint != null) {
             try {
                 player.teleport(checkpoint);
@@ -111,6 +138,7 @@ public class ParkourSession {
 
         long finishTime = System.currentTimeMillis() - startTime;
         finishTimes.put(uuid, finishTime);
+        logDebug("Player " + player.getName() + " finished course in " + finishTime + " ms!");
 
         if (rga != null) {
             try {
@@ -127,11 +155,13 @@ public class ParkourSession {
     }
 
     public void timeoutMatch() {
+        logDebug("Match timed out for world: " + worldName);
         requestSessionConclude("Match Timeout");
     }
 
     private void requestSessionConclude(String reason) {
         cancelTimer();
+        logDebug("Requesting session conclusion for world: " + worldName + " (Reason: " + reason + ")");
         try {
             RGA rgaInstance = RGA.getInstance();
             if (rgaInstance != null) {
@@ -150,6 +180,12 @@ public class ParkourSession {
                 // Safe fallback for test execution
             }
             matchTimer = null;
+        }
+    }
+
+    private void logDebug(String message) {
+        if (plugin != null) {
+            plugin.getLogger().info("[rgaParkour DEBUG] " + message);
         }
     }
 

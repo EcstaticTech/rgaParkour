@@ -33,7 +33,7 @@ public class ParkourPlayerListener implements Listener {
         this.config = config;
     }
 
-    @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onPlayerMove(PlayerMoveEvent event) {
         // Performance Guard: Enforce block position change
         if (!event.hasChangedBlock()) {
@@ -43,7 +43,7 @@ public class ParkourPlayerListener implements Listener {
         Player player = event.getPlayer();
         String worldName = player.getWorld().getName();
         ParkourSession session = sessionManager.getSession(worldName);
-        if (session == null) {
+        if (session == null || !session.isActivePlayer(player.getUniqueId())) {
             return;
         }
 
@@ -59,9 +59,9 @@ public class ParkourPlayerListener implements Listener {
 
         Location to = event.getTo();
 
-        // 1. Fall Y-threshold check
+        // 1. Y-Threshold Fall Interception
         if (to.getY() <= config.getFallThresholdY()) {
-            session.handleFail(player);
+            session.applyFailEffects(player);
             return;
         }
 
@@ -73,7 +73,7 @@ public class ParkourPlayerListener implements Listener {
 
         // 2. Fail block material check (e.g., LAVA, WATER)
         if (config.isFailMaterial(feetMat) || config.isFailMaterial(underMat)) {
-            session.handleFail(player);
+            session.applyFailEffects(player);
             return;
         }
 
