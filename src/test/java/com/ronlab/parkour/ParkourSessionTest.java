@@ -29,7 +29,7 @@ class ParkourSessionTest {
     }
 
     @Test
-    @DisplayName("Test active player check and checkpoint progression")
+    @DisplayName("Test active player check and initial spawn snapshot progression")
     void testActivePlayerAndCheckpointProgression() {
         UUID playerUuid = UUID.randomUUID();
         ParkourSession session = new ParkourSession("minigame_parkour_1", List.of(playerUuid), config, null);
@@ -39,6 +39,8 @@ class ParkourSessionTest {
 
         Player player = mock(Player.class);
         when(player.getUniqueId()).thenReturn(playerUuid);
+        when(player.isOnline()).thenReturn(true);
+        when(player.getName()).thenReturn("TestPlayer");
 
         World world = mock(World.class);
         Location initialSpawn = new Location(world, 0, 64, 0);
@@ -50,6 +52,7 @@ class ParkourSessionTest {
 
         session.startGame(List.of(player));
 
+        // Initial spawn snapshot verified
         assertEquals(initialSpawn, session.getLastCheckpoint(playerUuid));
 
         session.recordCheckpoint(player, checkpoint1);
@@ -64,6 +67,8 @@ class ParkourSessionTest {
 
         Player player = mock(Player.class);
         when(player.getUniqueId()).thenReturn(playerUuid);
+        when(player.isOnline()).thenReturn(true);
+        when(player.getName()).thenReturn("TestPlayer");
 
         World world = mock(World.class);
         Location spawnLoc = new Location(world, 0, 64, 0);
@@ -94,9 +99,13 @@ class ParkourSessionTest {
 
         Player p1 = mock(Player.class);
         when(p1.getUniqueId()).thenReturn(p1Uuid);
+        when(p1.isOnline()).thenReturn(true);
+        when(p1.getName()).thenReturn("Player1");
 
         Player p2 = mock(Player.class);
         when(p2.getUniqueId()).thenReturn(p2Uuid);
+        when(p2.isOnline()).thenReturn(true);
+        when(p2.getName()).thenReturn("Player2");
 
         World world = mock(World.class);
         when(p1.getLocation()).thenReturn(new Location(world, 0, 64, 0));
@@ -129,6 +138,8 @@ class ParkourSessionTest {
 
         Player soloPlayer = mock(Player.class);
         when(soloPlayer.getUniqueId()).thenReturn(soloUuid);
+        when(soloPlayer.isOnline()).thenReturn(true);
+        when(soloPlayer.getName()).thenReturn("SoloPlayer");
 
         World world = mock(World.class);
         when(soloPlayer.getLocation()).thenReturn(new Location(world, 0, 64, 0));

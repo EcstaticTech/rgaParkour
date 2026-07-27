@@ -6,6 +6,7 @@ import com.ronlab.rga.api.RGASessionControl;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Sound;
+import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.potion.PotionEffect;
@@ -21,7 +22,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.logging.Logger;
 
 /**
  * Encapsulates match state and progression for an active procedural parkour session.
@@ -48,11 +48,43 @@ public class ParkourSession {
 
     public void startGame(@Nullable List<Player> players) {
         this.startTime = System.currentTimeMillis();
+        World sessionWorld = null;
+        try {
+            if (Bukkit.getServer() != null) {
+                sessionWorld = Bukkit.getWorld(worldName);
+            }
+        } catch (Throwable ignored) {
+            // Safe fallback for unit tests
+        }
+
         if (players != null) {
             for (Player player : players) {
-                if (player != null) {
-                    Location spawn = player.getLocation() != null ? player.getLocation().clone() : player.getWorld().getSpawnLocation();
-                    lastCheckpoints.put(player.getUniqueId(), spawn);
+                if (player != null && player.isOnline()) {
+                    Location targetSpawn = null;
+                    if (sessionWorld != null) {
+                        try {
+                            targetSpawn = sessionWorld.getSpawnLocation();
+                        } catch (Throwable ignored) {
+                        }
+                    }
+                    if (targetSpawn == null && player.getWorld() != null) {
+                        try {
+                            targetSpawn = player.getWorld().getSpawnLocation();
+                        } catch (Throwable ignored) {
+                        }
+                    }
+
+                    Location spawnLocation = (targetSpawn != null)
+                            ? targetSpawn.clone()
+                            : (player.getLocation() != null ? player.getLocation().clone() : null);
+
+                    if (spawnLocation != null) {
+                        this.lastCheckpoints.put(player.getUniqueId(), spawnLocation);
+                        logDebug(String.format(
+                                "Snapshotted initial spawn location for %s at (%.1f, %.1f, %.1f) in world %s",
+                                player.getName(), spawnLocation.getX(), spawnLocation.getY(), spawnLocation.getZ(), worldName
+                        ));
+                    }
                 }
             }
         }
@@ -70,7 +102,21 @@ public class ParkourSession {
     }
 
     public @Nullable Location getLastCheckpoint(UUID uuid) {
-        return lastCheckpoints.get(uuid);
+        Location checkpoint = lastCheckpoints.get(uuid);
+        if (checkpoint != null) {
+            return checkpoint;
+        }
+        try {
+            if (Bukkit.getServer() != null) {
+                World world = Bukkit.getWorld(worldName);
+                if (world != null) {
+                    return world.getSpawnLocation();
+                }
+            }
+        } catch (Throwable ignored) {
+            // Safe fallback for unit tests / missing world context
+        }
+        return null;
     }
 
     public void recordCheckpoint(@Nullable Player player, @Nullable Location loc) {
@@ -92,12 +138,12 @@ public class ParkourSession {
     public void applyFailEffects(@Nullable Player player) {
         if (player == null) return;
         UUID uuid = player.getUniqueId();
-        Location checkpoint = lastCheckpoints.get(uuid);
+        Location checkpoint = getLastCheckpoint(uuid);
         if (checkpoint == null) {
             try {
-                checkpoint = player.getWorld().getSpawnLocation();
-            } catch (Throwable ignored) {
                 checkpoint = player.getLocation();
+            } catch (Throwable ignored) {
+                // Final fallback
             }
         }
 
