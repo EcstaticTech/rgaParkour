@@ -27,14 +27,8 @@ public class ParkourKitConfig {
 
     public ParkourKitConfig() {
         // Default fallback values
-        Material goldPlate = Material.matchMaterial("GOLD_PRESSURE_PLATE");
-        checkpointMaterials.add(goldPlate != null ? goldPlate : Material.LIGHT_WEIGHTED_PRESSURE_PLATE);
         checkpointMaterials.add(Material.LIGHT_WEIGHTED_PRESSURE_PLATE);
-
-        Material ironPlate = Material.matchMaterial("IRON_PRESSURE_PLATE");
-        finishMaterials.add(ironPlate != null ? ironPlate : Material.HEAVY_WEIGHTED_PRESSURE_PLATE);
         finishMaterials.add(Material.HEAVY_WEIGHTED_PRESSURE_PLATE);
-
         failMaterials.add(Material.LAVA);
         failMaterials.add(Material.WATER);
     }
@@ -56,7 +50,7 @@ public class ParkourKitConfig {
         Set<Material> parsed = new HashSet<>();
         for (String raw : rawNames) {
             if (raw == null || raw.isBlank()) continue;
-            Material mat = Material.matchMaterial(raw.trim());
+            Material mat = resolveMaterialAlias(raw.trim());
             if (mat != null) {
                 parsed.add(mat);
             } else if (logger != null) {
@@ -67,6 +61,17 @@ public class ParkourKitConfig {
             targetSet.clear();
             targetSet.addAll(parsed);
         }
+    }
+
+    private @Nullable Material resolveMaterialAlias(String input) {
+        String upper = input.toUpperCase().trim();
+        if ("GOLD_PRESSURE_PLATE".equals(upper)) {
+            return Material.LIGHT_WEIGHTED_PRESSURE_PLATE;
+        }
+        if ("IRON_PRESSURE_PLATE".equals(upper)) {
+            return Material.HEAVY_WEIGHTED_PRESSURE_PLATE;
+        }
+        return Material.matchMaterial(input);
     }
 
     public boolean isCheckpointMaterial(@Nullable Material material) {

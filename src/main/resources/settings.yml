@@ -1,8 +1,8 @@
 # rgaParkour v1.0.0 Configuration
 parkour-kit:
   checkpoint-materials:
-    - "GOLD_PRESSURE_PLATE"
     - "LIGHT_WEIGHTED_PRESSURE_PLATE"
+    - "GOLD_PRESSURE_PLATE"
   finish-materials:
     - "HEAVY_WEIGHTED_PRESSURE_PLATE"
     - "IRON_PRESSURE_PLATE"
