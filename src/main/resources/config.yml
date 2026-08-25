@@ -1,14 +1,22 @@
 # ==============================================================================
-# rgaParkour v1.0.0 Default Configuration Schema
+# rgaParkour v1.0.0 Default Configuration Schema (rga-api:1.13.1 compliant)
 # Companion Plugin for Ronlab Game Assistant (RGA) - PaperMC 26.2 / Java 25
 # ==============================================================================
 #
 # SOLO QA DEVELOPER MODE:
 # When a minigame session is initialized with a single player (initialPlayerCount == 1),
-# Solo QA Developer Mode is active. In this mode, win conditions freeze to allow
-# continuous testing of map resets, checkpoint mechanics, fall thresholds, split
-# timing, and spectator transitions without premature session conclusion.
+# Solo QA Developer Mode is active. In this mode, win conditions freeze and match
+# timeouts are bypassed to allow continuous testing of map resets, checkpoint mechanics,
+# fall thresholds, split timing, and spectator transitions without premature session conclusion.
 # ==============================================================================
+
+# rga-api:1.13.1 Compliant Session Configuration
+parkour:
+  # Maximum time in seconds before match concludes. Set to 0 for unlimited.
+  time-limit-seconds: 0
+
+  # Fall threshold Y-level before teleporting player back to checkpoint
+  fall-threshold-y: -60.0
 
 # Parkour Kit Material Definitions
 parkour-kit:
@@ -27,14 +35,15 @@ parkour-kit:
     - "LAVA"
     - "WATER"
 
-# Game Session Rules & Thresholds
+# Game Session Rules & Thresholds (Legacy Fallback Alignment)
 game:
   # Y-coordinate threshold below which players are instantly teleported to their active checkpoint
-  fall-threshold-y: -60
+  fall-threshold-y: -60.0
 
-  # Maximum duration in seconds before match times out automatically (default: 300s / 5m)
-  max-match-duration-seconds: 300
+  # Maximum duration in seconds before match times out automatically (Set to 0 for unlimited)
+  max-match-duration-seconds: 0
 
   # Duration in seconds of Resistance invulnerability applied to players upon fail reset
   invulnerability-seconds-on-fail: 1
+
 

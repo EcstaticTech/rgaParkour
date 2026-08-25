@@ -91,9 +91,17 @@ When a minigame match is initialized with a single player (`initialPlayerCount =
 
 ```yaml
 # ==============================================================================
-# rgaParkour v1.0.0 Default Configuration Schema
+# rgaParkour v1.0.0 Default Configuration Schema (rga-api:1.13.1 compliant)
 # Companion Plugin for Ronlab Game Assistant (RGA) - PaperMC 26.2 / Java 25
 # ==============================================================================
+
+# rga-api:1.13.1 Compliant Session Configuration
+parkour:
+  # Maximum time in seconds before match concludes. Set to 0 for unlimited.
+  time-limit-seconds: 0
+
+  # Fall threshold Y-level before teleporting player back to checkpoint
+  fall-threshold-y: -60.0
 
 parkour-kit:
   # Block materials that trigger checkpoint registration and audio cues when stepped on
@@ -113,10 +121,10 @@ parkour-kit:
 
 game:
   # Y-coordinate threshold below which players are instantly teleported to their active checkpoint
-  fall-threshold-y: -60
+  fall-threshold-y: -60.0
 
-  # Maximum duration in seconds before match times out automatically (default: 300s / 5m)
-  max-match-duration-seconds: 300
+  # Maximum duration in seconds before match times out automatically (Set to 0 for unlimited)
+  max-match-duration-seconds: 0
 
   # Duration in seconds of Resistance invulnerability applied to players upon fail reset
   invulnerability-seconds-on-fail: 1

@@ -21,7 +21,7 @@ class ParkourKitConfigTest {
     }
 
     @Test
-    @DisplayName("Verify default material mappings and game properties")
+    @DisplayName("Verify default material mappings and game properties (rga-api:1.13.1 compliant)")
     void testDefaults() {
         assertTrue(config.isCheckpointMaterial(Material.LIGHT_WEIGHTED_PRESSURE_PLATE));
 
@@ -31,14 +31,18 @@ class ParkourKitConfigTest {
         assertTrue(config.isFailMaterial(Material.WATER));
 
         assertEquals(-60.0, config.getFallThresholdY());
-        assertEquals(300, config.getMaxMatchDurationSeconds());
+        assertEquals(0, config.getTimeLimitSeconds());
+        assertEquals(0, config.getMaxMatchDurationSeconds());
         assertEquals(1, config.getInvulnerabilitySecondsOnFail());
     }
 
     @Test
-    @DisplayName("Verify YAML material parsing and fallback defaults for unmapped blocks")
+    @DisplayName("Verify YAML material parsing and parkour section compliant schema")
     void testYamlParsingAndFallback() {
         String yamlString = """
+                parkour:
+                  time-limit-seconds: 120
+                  fall-threshold-y: -15.0
                 parkour-kit:
                   checkpoint-materials:
                     - "DIAMOND_BLOCK"
@@ -48,8 +52,6 @@ class ParkourKitConfigTest {
                   fail-materials:
                     - "BEDROCK"
                 game:
-                  fall-threshold-y: -20.5
-                  max-match-duration-seconds: 180
                   invulnerability-seconds-on-fail: 2
                 """;
 
@@ -62,8 +64,9 @@ class ParkourKitConfigTest {
         assertTrue(config.isFinishMaterial(Material.EMERALD_BLOCK));
         assertTrue(config.isFailMaterial(Material.BEDROCK));
 
-        assertEquals(-20.5, config.getFallThresholdY());
-        assertEquals(180, config.getMaxMatchDurationSeconds());
+        assertEquals(-15.0, config.getFallThresholdY());
+        assertEquals(120, config.getTimeLimitSeconds());
+        assertEquals(120, config.getMaxMatchDurationSeconds());
         assertEquals(2, config.getInvulnerabilitySecondsOnFail());
     }
 }

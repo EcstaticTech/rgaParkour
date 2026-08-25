@@ -253,4 +253,42 @@ class ParkourSessionTest {
         assertTrue(session.hasFinished(playerUuid));
         assertTrue(session.isSpectator(playerUuid));
     }
+
+    @Test
+    @DisplayName("Test Blueprint constructor and tick() method with zero timeLimitSeconds and Solo QA mode")
+    void testBlueprintConstructorAndTickGuards() {
+        // Blueprint constructor with initialPlayerCount = 1 (Solo QA mode) and timeLimitSeconds = 0
+        ParkourSession sessionSolo = new ParkourSession("world_blueprint_solo", 1, 0);
+
+        assertEquals(1, sessionSolo.getInitialPlayerCount());
+        assertEquals(0, sessionSolo.getTimeLimitSeconds());
+        assertEquals(0, sessionSolo.getElapsedSeconds());
+
+        // Ticking session should bypass timeout due to timeLimitSeconds <= 0 and Solo QA mode
+        sessionSolo.tick();
+        sessionSolo.tick();
+        assertEquals(0, sessionSolo.getElapsedSeconds());
+        assertNotEquals(ParkourSession.SessionState.CONCLUDED, sessionSolo.getState());
+
+        // Test multi-player session with active timeLimitSeconds
+        ParkourSession sessionMulti = new ParkourSession("world_blueprint_multi", 2, 300);
+        assertEquals(2, sessionMulti.getInitialPlayerCount());
+        assertEquals(300, sessionMulti.getTimeLimitSeconds());
+
+        sessionMulti.tick();
+        assertEquals(1, sessionMulti.getElapsedSeconds());
+        assertNotEquals(ParkourSession.SessionState.CONCLUDED, sessionMulti.getState());
+    }
+
+    @Test
+    @DisplayName("Test timeoutMatch bypass when timeLimitSeconds <= 0 or initialPlayerCount == 1")
+    void testTimeoutMatchBypass() {
+        ParkourSession session = new ParkourSession("world_timeout_bypass", 1, 0);
+        session.startRacingForTest();
+
+        session.timeoutMatch();
+
+        // State should remain RACING because timeout was bypassed
+        assertEquals(ParkourSession.SessionState.RACING, session.getState());
+    }
 }

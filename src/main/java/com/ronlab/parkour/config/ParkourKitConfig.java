@@ -22,7 +22,7 @@ public class ParkourKitConfig {
     private final Set<Material> failMaterials = new HashSet<>();
 
     private double fallThresholdY = -60.0;
-    private int maxMatchDurationSeconds = 300;
+    private int maxMatchDurationSeconds = 0;
     private int invulnerabilitySecondsOnFail = 1;
 
     public ParkourKitConfig() {
@@ -38,8 +38,20 @@ public class ParkourKitConfig {
         parseMaterials(config.getStringList("parkour-kit.finish-materials"), finishMaterials, "finish", logger);
         parseMaterials(config.getStringList("parkour-kit.fail-materials"), failMaterials, "fail", logger);
 
-        this.fallThresholdY = config.getDouble("game.fall-threshold-y", -60.0);
-        this.maxMatchDurationSeconds = config.getInt("game.max-match-duration-seconds", 300);
+        if (config.contains("parkour.fall-threshold-y")) {
+            this.fallThresholdY = config.getDouble("parkour.fall-threshold-y");
+        } else {
+            this.fallThresholdY = config.getDouble("game.fall-threshold-y", -60.0);
+        }
+
+        if (config.contains("parkour.time-limit-seconds")) {
+            this.maxMatchDurationSeconds = config.getInt("parkour.time-limit-seconds");
+        } else if (config.contains("game.max-match-duration-seconds")) {
+            this.maxMatchDurationSeconds = config.getInt("game.max-match-duration-seconds");
+        } else {
+            this.maxMatchDurationSeconds = 0;
+        }
+
         this.invulnerabilitySecondsOnFail = config.getInt("game.invulnerability-seconds-on-fail", 1);
     }
 
@@ -100,6 +112,10 @@ public class ParkourKitConfig {
 
     public double getFallThresholdY() {
         return fallThresholdY;
+    }
+
+    public int getTimeLimitSeconds() {
+        return maxMatchDurationSeconds;
     }
 
     public int getMaxMatchDurationSeconds() {

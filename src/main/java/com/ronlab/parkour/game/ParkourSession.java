@@ -38,6 +38,9 @@ public class ParkourSession {
     public record BlockPos(int x, int y, int z) {}
 
     private final String worldName;
+    private final int initialPlayerCount;
+    private final int timeLimitSeconds;
+    private int elapsedSeconds = 0;
     private final List<UUID> activePlayers;
     private final Map<UUID, Location> lastCheckpoints = new ConcurrentHashMap<>();
     private final Map<UUID, Long> finishTimes = new ConcurrentHashMap<>();
@@ -52,11 +55,29 @@ public class ParkourSession {
     private long startTime;
     private @Nullable BukkitTask matchTimer;
 
+    public ParkourSession(String worldName, int initialPlayerCount, int timeLimitSeconds) {
+        this(worldName, Collections.emptyList(), createConfigWithTimeLimit(timeLimitSeconds), null, initialPlayerCount, timeLimitSeconds);
+    }
+
     public ParkourSession(String worldName, @Nullable List<UUID> activePlayers, @Nullable ParkourKitConfig config, @Nullable Plugin plugin) {
+        this(worldName, activePlayers, config, plugin, activePlayers != null ? activePlayers.size() : 0, config != null ? config.getTimeLimitSeconds() : 0);
+    }
+
+    private ParkourSession(String worldName, @Nullable List<UUID> activePlayers, @Nullable ParkourKitConfig config, @Nullable Plugin plugin, int initialPlayerCount, int timeLimitSeconds) {
         this.worldName = worldName;
         this.activePlayers = new CopyOnWriteArrayList<>(activePlayers != null ? activePlayers : Collections.emptyList());
+        this.initialPlayerCount = initialPlayerCount > 0 ? initialPlayerCount : this.activePlayers.size();
         this.config = config != null ? config : new ParkourKitConfig();
+        this.timeLimitSeconds = timeLimitSeconds;
         this.plugin = plugin;
+    }
+
+    private static ParkourKitConfig createConfigWithTimeLimit(int timeLimitSeconds) {
+        ParkourKitConfig cfg = new ParkourKitConfig();
+        org.bukkit.configuration.file.YamlConfiguration yaml = new org.bukkit.configuration.file.YamlConfiguration();
+        yaml.set("parkour.time-limit-seconds", timeLimitSeconds);
+        cfg.loadFromConfig(yaml, null);
+        return cfg;
     }
 
     public void startGame(@Nullable List<Player> players) {
@@ -161,9 +182,23 @@ public class ParkourSession {
             }
 
             if (plugin != null && Bukkit.getScheduler() != null) {
-                long ticks = config.getMaxMatchDurationSeconds() * 20L;
-                matchTimer = Bukkit.getScheduler().runTaskLater(plugin, this::timeoutMatch, ticks);
+                if (timeLimitSeconds > 0 && initialPlayerCount > 1) {
+                    long ticks = timeLimitSeconds * 20L;
+                    matchTimer = Bukkit.getScheduler().runTaskLater(plugin, this::timeoutMatch, ticks);
+                }
             }
+        }
+    }
+
+    public void tick() {
+        // Bypass time-out checks if disabled (<= 0) or during Solo QA testing (initialPlayerCount == 1)
+        if (timeLimitSeconds <= 0 || initialPlayerCount == 1) {
+            return;
+        }
+
+        elapsedSeconds++;
+        if (elapsedSeconds >= timeLimitSeconds) {
+            timeoutMatch();
         }
     }
 
@@ -281,7 +316,8 @@ public class ParkourSession {
         }
 
         // Evaluate Party Completion
-        if (finishTimes.size() >= activePlayers.size()) {
+        // Bypass auto-conclude in Solo QA mode (initialPlayerCount == 1) so win conditions freeze for continuous testing
+        if (initialPlayerCount > 1 && finishTimes.size() >= activePlayers.size()) {
             requestSessionConclude("Party Completion");
         }
     }
@@ -304,8 +340,25 @@ public class ParkourSession {
     }
 
     public void timeoutMatch() {
+        // Bypass time-out checks if disabled (<= 0) or during Solo QA testing (initialPlayerCount == 1)
+        if (timeLimitSeconds <= 0 || initialPlayerCount == 1) {
+            logDebug("Timeout bypassed due to unlimited match duration (<= 0) or Solo QA mode (initialPlayerCount == 1).");
+            return;
+        }
         logDebug("Match timed out for world: " + worldName);
         requestSessionConclude("Match Timeout");
+    }
+
+    public int getInitialPlayerCount() {
+        return initialPlayerCount;
+    }
+
+    public int getTimeLimitSeconds() {
+        return timeLimitSeconds;
+    }
+
+    public int getElapsedSeconds() {
+        return elapsedSeconds;
     }
 
     private void requestSessionConclude(String reason) {

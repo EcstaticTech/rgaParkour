@@ -54,9 +54,17 @@ When a minigame session is initiated with a single player (`initialPlayerCount =
 
 ```yaml
 # ==============================================================================
-# rgaParkour v1.0.0 Default Configuration Schema
+# rgaParkour v1.0.0 Default Configuration Schema (rga-api:1.13.1 compliant)
 # Companion Plugin for Ronlab Game Assistant (RGA) - PaperMC 26.2 / Java 25
 # ==============================================================================
+
+# rga-api:1.13.1 Compliant Session Configuration
+parkour:
+  # Maximum time in seconds before match concludes. Set to 0 for unlimited.
+  time-limit-seconds: 0
+
+  # Fall threshold Y-level before teleporting player back to checkpoint
+  fall-threshold-y: -60.0
 
 # Parkour Kit Material Definitions
 parkour-kit:
@@ -70,20 +78,20 @@ parkour-kit:
     - "LAVA"
     - "WATER"
 
-# Game Session Rules & Thresholds
+# Game Session Rules & Thresholds (Legacy Fallback Alignment)
 game:
-  fall-threshold-y: -60
-  max-match-duration-seconds: 300
+  fall-threshold-y: -60.0
+  max-match-duration-seconds: 0
   invulnerability-seconds-on-fail: 1
 ```
 
 ### Configuration Key Details
 
+- `parkour.time-limit-seconds` (`int`): Maximum session duration in seconds before match concludes. Set to `0` for unlimited (default: `0`).
+- `parkour.fall-threshold-y` (`double`): Y-level coordinate threshold ($Y \le -60.0$) at or below which a fail/reset is triggered. Default is `-60.0`.
 - `parkour-kit.checkpoint-materials` (`List<String>`): Block materials that act as parkour checkpoints.
 - `parkour-kit.finish-materials` (`List<String>`): Block materials that mark the parkour finish line.
 - `parkour-kit.fail-materials` (`List<String>`): Block materials that trigger fail/reset effects upon contact.
-- `game.fall-threshold-y` (`double` / `int`): Y-level coordinate threshold ($Y \le -60.0$) at or below which a fail/reset is triggered. Default is `-60`.
-- `game.max-match-duration-seconds` (`int`): Maximum session duration in seconds before timing out. Default is `300` (5 minutes).
 - `game.invulnerability-seconds-on-fail` (`int`): Duration of Resistance invulnerability applied upon fail reset. Default is `1`.
 
 ---
