@@ -104,6 +104,47 @@ class ParkourScoreboardTest {
     }
 
     @Test
+    @DisplayName("Test per-player scoreboard lines formatting including personal checkpoints, falls, and standings")
+    void testPerPlayerLinesFormatting() {
+        UUID p1Uuid = UUID.randomUUID();
+        UUID p2Uuid = UUID.randomUUID();
+
+        ParkourSession session = new ParkourSession("world_test", List.of(p1Uuid, p2Uuid), config, null);
+        session.setStartTime(System.currentTimeMillis() - 30000);
+
+        Player p1 = mock(Player.class);
+        when(p1.getUniqueId()).thenReturn(p1Uuid);
+        when(p1.getName()).thenReturn("LongPlayerName12345");
+
+        Player p2 = mock(Player.class);
+        when(p2.getUniqueId()).thenReturn(p2Uuid);
+        when(p2.getName()).thenReturn("P2");
+
+        World world = mock(World.class);
+        session.recordCheckpoint(p1, new Location(world, 5, 64, 5));
+        session.applyFailEffects(p1);
+        session.applyFailEffects(p1);
+
+        // Player 2 finishes
+        session.handleFinish(p2, null);
+
+        scoreboardManager.registerPlayerName(p1Uuid, "LongPlayerName12345");
+        scoreboardManager.registerPlayerName(p2Uuid, "P2");
+
+        List<Component> p1Lines = scoreboardManager.buildLinesForPlayer(p1Uuid, session);
+        String allP1LinesText = String.join("\n", p1Lines.stream().map(c -> PlainTextComponentSerializer.plainText().serialize(c)).toList());
+
+        // Verify Personal Metrics
+        assertTrue(allP1LinesText.contains("Checkpoints: 1"), "Should display personal checkpoints");
+        assertTrue(allP1LinesText.contains("Falls: 2"), "Should display personal falls");
+
+        // Verify Standings
+        assertTrue(allP1LinesText.contains("LongPlayerName"), "P1 name should be present in standings");
+        assertTrue(allP1LinesText.contains("P2"), "P2 name should be present in standings");
+        assertTrue(allP1LinesText.contains("✔"), "P2 should display checkmark");
+    }
+
+    @Test
     @DisplayName("Test leaderboard lines builder formatting for active, finished, and spectator players")
     void testLeaderboardLinesFormatting() {
         UUID p1Uuid = UUID.randomUUID();

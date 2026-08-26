@@ -10,6 +10,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -60,8 +61,8 @@ class ParkourSessionTest {
     }
 
     @Test
-    @DisplayName("Test failure reset correctly maintains checkpoint state and teleports player")
-    void testFailureResetMaintainsCheckpoint() {
+    @DisplayName("Test failure reset correctly maintains checkpoint state, tracks personal falls, and teleports player")
+    void testFailureResetMaintainsCheckpointAndTracksFalls() {
         UUID playerUuid = UUID.randomUUID();
         ParkourSession session = new ParkourSession("minigame_parkour_1", List.of(playerUuid), config, null);
 
@@ -79,15 +80,61 @@ class ParkourSessionTest {
         when(player.getWorld()).thenReturn(world);
 
         session.startGame(List.of(player));
+        assertEquals(0, session.getFallCount(playerUuid));
 
         session.recordCheckpoint(player, checkpointLoc);
         assertEquals(checkpointLoc, session.getLastCheckpoint(playerUuid));
 
         session.applyFailEffects(player);
 
-        // Checkpoint state remains intact after fail
+        // Checkpoint state remains intact after fail, fall count incremented
         assertEquals(checkpointLoc, session.getLastCheckpoint(playerUuid));
-        verify(player, atLeastOnce()).teleport(eq(checkpointLoc));
+        assertEquals(1, session.getFallCount(playerUuid));
+        assertEquals(1, session.getPersonalFalls().get(playerUuid));
+
+        session.applyFailEffects(player);
+        assertEquals(2, session.getFallCount(playerUuid));
+    }
+
+    @Test
+    @DisplayName("Test multi-spawn dispatcher round-robin assignment")
+    void testMultiSpawnRoundRobinAssignment() {
+        World world = mock(World.class);
+        Location spawn1 = new Location(world, 10, 64, 10);
+        Location spawn2 = new Location(world, 20, 64, 20);
+        Location spawn3 = new Location(world, 30, 64, 30);
+        List<Location> spawnVectors = List.of(spawn1, spawn2, spawn3);
+
+        List<UUID> playerUuids = new ArrayList<>();
+        List<Player> players = new ArrayList<>();
+
+        for (int i = 0; i < 5; i++) {
+            UUID uuid = UUID.randomUUID();
+            playerUuids.add(uuid);
+            Player player = mock(Player.class);
+            when(player.getUniqueId()).thenReturn(uuid);
+            when(player.isOnline()).thenReturn(true);
+            when(player.getName()).thenReturn("Runner_" + i);
+            when(player.getWorld()).thenReturn(world);
+            when(player.getLocation()).thenReturn(new Location(world, 0, 64, 0));
+            players.add(player);
+        }
+
+        ParkourSession session = new ParkourSession("minigame_parkour_multispawn", playerUuids, config, null, spawnVectors);
+        assertEquals(3, session.getSpawnVectors().size());
+
+        session.startGame(players);
+
+        // Player 0 -> Spawn 1
+        assertEquals(spawn1, session.getLastCheckpoint(playerUuids.get(0)));
+        // Player 1 -> Spawn 2
+        assertEquals(spawn2, session.getLastCheckpoint(playerUuids.get(1)));
+        // Player 2 -> Spawn 3
+        assertEquals(spawn3, session.getLastCheckpoint(playerUuids.get(2)));
+        // Player 3 -> Spawn 1 (round-robin wrap)
+        assertEquals(spawn1, session.getLastCheckpoint(playerUuids.get(3)));
+        // Player 4 -> Spawn 2 (round-robin wrap)
+        assertEquals(spawn2, session.getLastCheckpoint(playerUuids.get(4)));
     }
 
     @Test
@@ -204,6 +251,10 @@ class ParkourSessionTest {
                         assertNotNull(entry.getKey());
                         assertNotNull(entry.getValue());
                     }
+                    for (var entry : session.getPersonalFalls().entrySet()) {
+                        assertNotNull(entry.getKey());
+                        assertNotNull(entry.getValue());
+                    }
                 } catch (Throwable t1) {
                     failure.compareAndSet(null, t1);
                 }
@@ -220,6 +271,7 @@ class ParkourSessionTest {
         // Verify player states are properly isolated
         assertNotNull(session.getLastCheckpoints());
         assertNotNull(session.getFinishTimes());
+        assertNotNull(session.getPersonalFalls());
     }
 
     @Test

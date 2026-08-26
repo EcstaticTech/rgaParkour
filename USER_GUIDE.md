@@ -2,7 +2,7 @@
 
 **Target Environment**: PaperMC 26.2 (Build 71+)  
 **Java Standard**: Java 25 (Bytecode Version 69)  
-**Core Framework Engine**: `ronlabgameassistant` / `rga-core` (`com.ronlab:rga-api:1.13.0-SNAPSHOT`)
+**Core Framework Engine**: `ronlabgameassistant` / `rga-core` (`com.ronlab:rga-api:1.13.1`)
 
 ---
 
@@ -14,7 +14,7 @@
 
 1. **Core Gameplay Function Retention**:
    - Preserves 100% of native parkour game mechanics, custom tick loops, checkpoint registries, and spectator transitions.
-   - Operates independent local FastBoard scoreboards for active session participants.
+   - Operates independent local FastBoard scoreboards with isolated session scoreboards and teams for active participants.
 
 2. **Ronlab Integration Standard**:
    - Listens strictly for CPMK event payloads: `MinigameStartEvent` and `MinigameConcludeEvent` from `com.ronlab.rga.api.event.*`.
@@ -23,7 +23,7 @@
 3. **Baseline Structure & Rules Provision**:
    - Local scoreboards utilize FastBoard packet rendering to ensure sidebar margin numbers are suppressed (equivalent to PaperMC's `objective.numberFormat(NumberFormat.blank())`).
    - Player scoreboard assignment (`setupPlayerBoard`) occurs strictly during post-teleport spawn phases to prevent chunk-loading hangs.
-   - Teardown routines invoke `removeSessionScoreboards` and unregister objectives on `MinigameConcludeEvent`.
+   - Teardown routines invoke `removeSessionScoreboards`, unregister session teams, and restore players to the server main scoreboard on `MinigameConcludeEvent`.
 
 4. **Companion-Type Agnostic Design**:
    - Built as a self-contained module that communicates with `rga-core` exclusively through the `rga-api` event bus.
@@ -36,31 +36,53 @@
 
 ## 2. Minigame Mechanics & Rules
 
-`rgaParkour` provides procedural, real-time parkour racing:
+`rgaParkour` provides procedural, real-time multiplayer parkour racing:
 
-1. **Pre-Match Freeze & Countdown (3 Seconds)**:
-   - When a session starts, players are centered at spawn and frozen for 3 seconds to allow chunk rendering.
+1. **Multi-Spawn Vector Dispatching**:
+   - Upon match start, `SpawnVectorParser` reads `spawn-vectors` defined in the map's `map.yml`.
+   - Players are dispatched round-robin across starting pads (`spawnVectors.get(i % spawnVectors.size())`), eliminating spawn overlap and starting congestion.
+
+2. **Collision Isolation (`pk_runners`)**:
+   - Active runners are registered into the session team `pk_runners` with `COLLISION_RULE = OptionStatus.NEVER` and `canSeeFriendlyInvisibles = true`.
+   - Players cannot push or displace each other while attempting single-block jumps. Standard player models are preserved without packet ghosting overhead.
+
+3. **Pre-Match Freeze & Countdown (3 Seconds)**:
+   - When a session starts, players are placed at their assigned spawn and frozen for 3 seconds to allow client chunk rendering.
    - Displays a title countdown (`3`, `2`, `1`, `GO!`) and plays note block audio prompts (`BLOCK_NOTE_BLOCK_PLING` / `HARP`).
    - X/Y/Z position is locked while camera pitch and yaw controls remain free.
 
-2. **Checkpoint Detection**:
+4. **Checkpoint Detection & Fall Tracking**:
    - Stepping on configured pressure plates (`LIGHT_WEIGHTED_PRESSURE_PLATE`, `GOLD_PRESSURE_PLATE`) registers a checkpoint.
    - Plays an audio cue (`ENTITY_EXPERIENCE_ORB_PICKUP`) and snapshots the checkpoint location for recovery.
+   - Personal checkpoints and fall counts are recorded in real time.
 
-3. **Fail & Fall Recovery**:
-   - If a runner falls below Y-level $-60.0$ (`game.fall-threshold-y`) or makes contact with hazard blocks (`LAVA`, `WATER`), a fail reset is triggered.
-   - Teleports the player back to their latest checkpoint location with sound effect `ENTITY_ENDERMAN_TELEPORT`.
-   - Grants temporary Resistance invulnerability for 1 second (`game.invulnerability-seconds-on-fail`) to prevent fall-damage feedback loops.
+5. **Fail, Fall Bounds & Void Interception**:
+   - If a runner falls below Y-level $-60.0$ (`game.fall-threshold-y`), contacts hazards (`LAVA`, `WATER`), takes `DamageCause.VOID`, or encounters lethal damage, a fail reset is triggered.
+   - Bypasses vanilla player death screens and server hub respawn logic by immediately executing an asynchronous teleport (`player.teleportAsync(checkpoint)`).
+   - Grants temporary Resistance invulnerability for 1 second (`game.invulnerability-seconds-on-fail`) and plays `ENTITY_ENDERMAN_TELEPORT`.
 
-4. **Finish Line & Split Timing**:
+6. **Finish Line & Split Timing**:
    - Stepping on finish plates (`HEAVY_WEIGHTED_PRESSURE_PLATE`, `IRON_PRESSURE_PLATE`) records exact match finish time in milliseconds.
-   - Formats split time (`MM:SS`) on the live FastBoard scoreboard (`01:12 ✔`).
+   - Formats split time (`MM:SS ✔`) on the live FastBoard scoreboard.
    - Transitions finished runners into spectator mode (`rga.setSpectator(player, true)`).
    - Triggers `requestSessionConclude("Party Completion")` once all active runners finish.
 
 ---
 
-## 3. Solo QA Developer Mode (`initialPlayerCount == 1`)
+## 3. Scoreboard Lifecycle & High-Frequency (2-Tick) Updates
+
+`rgaParkour` manages sidebar scoreboards via shaded FastBoard (`fr.mrmicky.fastboard`):
+- **Isolated Scoreboard Assignment**: Each session allocates an isolated Bukkit `Scoreboard` instance, preventing sidebar stripping or conflict with `RonlabAnnouncer` during world transitions.
+- **High-Frequency Update Loop (2 Ticks / 100ms)**: Updates match elapsed time and split times smoothly without FastBoard packet flicker.
+- **Personal Metrics Rendering**:
+  - Top Section: Match Elapsed Time (`PARKOUR RACE (MM:SS)`)
+  - Personal Stats: `Checkpoints: X`, `Falls: Y`
+  - Standings: Active runner progression and finished split times (`01:12 ✔`) with 14-character name truncation.
+- **Clean Teardown**: Upon `MinigameConcludeEvent` or player disconnection, player boards are deleted, teams unregistered, and players restored to the main server scoreboard.
+
+---
+
+## 4. Solo QA Developer Mode (`initialPlayerCount == 1`)
 
 ### Testing Workflow
 When a minigame match is initialized with a single player (`initialPlayerCount == 1`):
@@ -69,7 +91,7 @@ When a minigame match is initialized with a single player (`initialPlayerCount =
 
 ---
 
-## 4. Administrative Commands & Permission Nodes
+## 5. Administrative Commands & Permission Nodes
 
 `rgaParkour` is completely **command-less** and **permission-less**:
 - All session lifecycles are controlled automatically by `rga-core` via `MinigameStartEvent` and `MinigameConcludeEvent`.
@@ -78,16 +100,9 @@ When a minigame match is initialized with a single player (`initialPlayerCount =
 
 ---
 
-## 5. Scoreboard Lifecycle & Rendering
+## 6. Configuration Reference
 
-`rgaParkour` manages sidebar scoreboards via shaded FastBoard (`fr.mrmicky.fastboard`):
-- **Post-Teleport Assignment**: Scoreboard initialization is synchronized to the spawn phase post-teleport to prevent chunk-loading hangs.
-- **Margin Number Suppression**: Uses FastBoard packet updates to eliminate default red sidebar margin numbers.
-- **Clean Teardown**: Upon `MinigameConcludeEvent`, `removeSessionScoreboards` deletes player scoreboards and returns players to the main server scoreboard.
-
----
-
-## 6. Configuration Reference (`config.yml` / `settings.yml`)
+### Plugin Configuration (`config.yml` / `settings.yml`)
 
 ```yaml
 # ==============================================================================
@@ -128,4 +143,17 @@ game:
 
   # Duration in seconds of Resistance invulnerability applied to players upon fail reset
   invulnerability-seconds-on-fail: 1
+```
+
+### Map Template Configuration (`map.yml`)
+
+Place `map.yml` inside the parkour map template folder:
+
+```yaml
+# Multi-player spawn coordinates (X, Y, Z or X, Y, Z, Yaw, Pitch)
+spawn-vectors:
+  - "10.5, 64.0, 10.5, 0.0, 0.0"
+  - "12.5, 64.0, 10.5, 0.0, 0.0"
+  - "14.5, 64.0, 10.5, 0.0, 0.0"
+  - "16.5, 64.0, 10.5, 0.0, 0.0"
 ```

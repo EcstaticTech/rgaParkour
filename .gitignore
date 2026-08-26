@@ -50,3 +50,6 @@ server/
 logs/
 plugins/
 *.tmp
+
+# local testing
+test/

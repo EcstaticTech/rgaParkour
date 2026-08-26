@@ -12,6 +12,9 @@ import org.bukkit.plugin.Plugin;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitTask;
+import org.bukkit.scoreboard.Scoreboard;
+import org.bukkit.scoreboard.ScoreboardManager;
+import org.bukkit.scoreboard.Team;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 
@@ -46,8 +49,13 @@ public class ParkourSession {
     private final Map<UUID, Long> finishTimes = new ConcurrentHashMap<>();
     private final Map<UUID, Set<BlockPos>> discoveredCheckpoints = new ConcurrentHashMap<>();
     private final Map<UUID, String> finishedSplitTimes = new ConcurrentHashMap<>();
+    private final Map<UUID, Integer> personalFalls = new ConcurrentHashMap<>();
+    private final List<Location> spawnVectors = new CopyOnWriteArrayList<>();
     private final ParkourKitConfig config;
     private final @Nullable Plugin plugin;
+
+    private @Nullable Scoreboard sessionScoreboard;
+    private @Nullable Team pkRunnersTeam;
 
     private volatile SessionState state = SessionState.COUNTDOWN;
     private volatile int countdownRemaining = 3;
@@ -56,20 +64,46 @@ public class ParkourSession {
     private @Nullable BukkitTask matchTimer;
 
     public ParkourSession(String worldName, int initialPlayerCount, int timeLimitSeconds) {
-        this(worldName, Collections.emptyList(), createConfigWithTimeLimit(timeLimitSeconds), null, initialPlayerCount, timeLimitSeconds);
+        this(worldName, Collections.emptyList(), createConfigWithTimeLimit(timeLimitSeconds), null, Collections.emptyList(), initialPlayerCount, timeLimitSeconds);
     }
 
     public ParkourSession(String worldName, @Nullable List<UUID> activePlayers, @Nullable ParkourKitConfig config, @Nullable Plugin plugin) {
-        this(worldName, activePlayers, config, plugin, activePlayers != null ? activePlayers.size() : 0, config != null ? config.getTimeLimitSeconds() : 0);
+        this(worldName, activePlayers, config, plugin, Collections.emptyList(), activePlayers != null ? activePlayers.size() : 0, config != null ? config.getTimeLimitSeconds() : 0);
     }
 
-    private ParkourSession(String worldName, @Nullable List<UUID> activePlayers, @Nullable ParkourKitConfig config, @Nullable Plugin plugin, int initialPlayerCount, int timeLimitSeconds) {
+    public ParkourSession(String worldName, @Nullable List<UUID> activePlayers, @Nullable ParkourKitConfig config, @Nullable Plugin plugin, @Nullable List<Location> spawnVectors) {
+        this(worldName, activePlayers, config, plugin, spawnVectors, activePlayers != null ? activePlayers.size() : 0, config != null ? config.getTimeLimitSeconds() : 0);
+    }
+
+    private ParkourSession(String worldName, @Nullable List<UUID> activePlayers, @Nullable ParkourKitConfig config, @Nullable Plugin plugin, @Nullable List<Location> spawnVectors, int initialPlayerCount, int timeLimitSeconds) {
         this.worldName = worldName;
         this.activePlayers = new CopyOnWriteArrayList<>(activePlayers != null ? activePlayers : Collections.emptyList());
+        if (spawnVectors != null && !spawnVectors.isEmpty()) {
+            this.spawnVectors.addAll(spawnVectors);
+        }
         this.initialPlayerCount = initialPlayerCount > 0 ? initialPlayerCount : this.activePlayers.size();
         this.config = config != null ? config : new ParkourKitConfig();
         this.timeLimitSeconds = timeLimitSeconds;
         this.plugin = plugin;
+        initScoreboardAndTeam();
+    }
+
+    private void initScoreboardAndTeam() {
+        try {
+            ScoreboardManager sm = Bukkit.getScoreboardManager();
+            if (sm != null) {
+                this.sessionScoreboard = sm.getNewScoreboard();
+                Team team = this.sessionScoreboard.getTeam("pk_runners");
+                if (team == null) {
+                    team = this.sessionScoreboard.registerNewTeam("pk_runners");
+                }
+                team.setOption(Team.Option.COLLISION_RULE, Team.OptionStatus.NEVER);
+                team.setCanSeeFriendlyInvisibles(true);
+                this.pkRunnersTeam = team;
+            }
+        } catch (Throwable ignored) {
+            // Safe fallback for headless / mock unit test environments
+        }
     }
 
     private static ParkourKitConfig createConfigWithTimeLimit(int timeLimitSeconds) {
@@ -78,6 +112,63 @@ public class ParkourSession {
         yaml.set("parkour.time-limit-seconds", timeLimitSeconds);
         cfg.loadFromConfig(yaml, null);
         return cfg;
+    }
+
+    public void bindPlayerScoreboardAndTeam(@Nullable Player player) {
+        if (player == null || !player.isOnline()) return;
+        if (sessionScoreboard != null) {
+            try {
+                player.setScoreboard(sessionScoreboard);
+            } catch (Throwable ignored) {
+            }
+        }
+        if (pkRunnersTeam != null) {
+            try {
+                pkRunnersTeam.addEntry(player.getName());
+            } catch (Throwable ignored) {
+            }
+        }
+    }
+
+    public void cleanupScoreboardAndTeam() {
+        if (pkRunnersTeam != null) {
+            try {
+                pkRunnersTeam.unregister();
+            } catch (Throwable ignored) {
+            }
+            pkRunnersTeam = null;
+        }
+
+        if (sessionScoreboard != null) {
+            try {
+                ScoreboardManager sm = Bukkit.getScoreboardManager();
+                Scoreboard mainBoard = (sm != null) ? sm.getMainScoreboard() : null;
+                if (mainBoard != null) {
+                    for (UUID uuid : activePlayers) {
+                        try {
+                            Player p = Bukkit.getPlayer(uuid);
+                            if (p != null && p.isOnline() && p.getScoreboard() == sessionScoreboard) {
+                                p.setScoreboard(mainBoard);
+                            }
+                        } catch (Throwable ignored) {
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
+            sessionScoreboard = null;
+        }
+    }
+
+    public void setSpawnVectors(List<Location> locations) {
+        this.spawnVectors.clear();
+        if (locations != null && !locations.isEmpty()) {
+            this.spawnVectors.addAll(locations);
+        }
+    }
+
+    public List<Location> getSpawnVectors() {
+        return List.copyOf(spawnVectors);
     }
 
     public void startGame(@Nullable List<Player> players) {
@@ -95,10 +186,13 @@ public class ParkourSession {
         }
 
         if (players != null) {
-            for (Player player : players) {
+            for (int i = 0; i < players.size(); i++) {
+                Player player = players.get(i);
                 if (player != null && player.isOnline()) {
                     Location targetSpawn = null;
-                    if (sessionWorld != null) {
+                    if (!spawnVectors.isEmpty()) {
+                        targetSpawn = spawnVectors.get(i % spawnVectors.size());
+                    } else if (sessionWorld != null) {
                         try {
                             targetSpawn = sessionWorld.getSpawnLocation();
                         } catch (Throwable ignored) {
@@ -117,11 +211,21 @@ public class ParkourSession {
 
                     if (spawnLocation != null) {
                         this.lastCheckpoints.put(player.getUniqueId(), spawnLocation);
+                        try {
+                            player.teleportAsync(spawnLocation);
+                        } catch (Throwable fallback) {
+                            try {
+                                player.teleport(spawnLocation);
+                            } catch (Throwable ignored) {
+                            }
+                        }
                         logDebug(String.format(
                                 "Snapshotted initial spawn location for %s at (%.1f, %.1f, %.1f) in world %s",
                                 player.getName(), spawnLocation.getX(), spawnLocation.getY(), spawnLocation.getZ(), worldName
                         ));
                     }
+
+                    bindPlayerScoreboardAndTeam(player);
                 }
             }
         }
@@ -253,6 +357,8 @@ public class ParkourSession {
     public void applyFailEffects(@Nullable Player player) {
         if (player == null) return;
         UUID uuid = player.getUniqueId();
+        personalFalls.merge(uuid, 1, Integer::sum);
+
         Location checkpoint = getLastCheckpoint(uuid);
         if (checkpoint == null) {
             try {
@@ -262,13 +368,17 @@ public class ParkourSession {
             }
         }
 
-        logDebug("Player " + player.getName() + " failed (Y <= " + config.getFallThresholdY() + " or fluid), resetting to checkpoint.");
+        logDebug("Player " + player.getName() + " failed (Fall #" + getFallCount(uuid) + ", Y <= " + config.getFallThresholdY() + " or fluid), resetting to checkpoint.");
 
         if (checkpoint != null) {
             try {
-                player.teleport(checkpoint);
-            } catch (Throwable ignored) {
-                // Safe fallback for test execution
+                player.teleportAsync(checkpoint);
+            } catch (Throwable fallback) {
+                try {
+                    player.teleport(checkpoint);
+                } catch (Throwable ignored) {
+                    // Safe fallback for test execution
+                }
             }
         }
 
@@ -335,6 +445,14 @@ public class ParkourSession {
         return set != null ? Set.copyOf(set) : Collections.emptySet();
     }
 
+    public int getFallCount(UUID uuid) {
+        return personalFalls.getOrDefault(uuid, 0);
+    }
+
+    public Map<UUID, Integer> getPersonalFalls() {
+        return Map.copyOf(personalFalls);
+    }
+
     public boolean isSpectator(UUID uuid) {
         return hasFinished(uuid) || !isActivePlayer(uuid);
     }
@@ -396,6 +514,7 @@ public class ParkourSession {
             }
             matchTimer = null;
         }
+        cleanupScoreboardAndTeam();
     }
 
     public SessionState getState() {
@@ -454,5 +573,13 @@ public class ParkourSession {
 
     public ParkourKitConfig getConfig() {
         return config;
+    }
+
+    public @Nullable Scoreboard getScoreboard() {
+        return sessionScoreboard;
+    }
+
+    public @Nullable Team getTeam() {
+        return pkRunnersTeam;
     }
 }

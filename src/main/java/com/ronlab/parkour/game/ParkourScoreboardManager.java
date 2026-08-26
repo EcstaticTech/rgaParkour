@@ -18,6 +18,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Manages dynamic, packet-based sidebar scoreboards for active parkour sessions using FastBoard.
+ * Operates on a high-frequency (2-tick / 100ms) update loop for smooth time rendering and isolated scoreboards.
  */
 @NullMarked
 public class ParkourScoreboardManager {
@@ -29,7 +30,8 @@ public class ParkourScoreboardManager {
     public void start(Plugin plugin, ParkourSessionManager sessionManager) {
         stop();
         if (Bukkit.getScheduler() != null) {
-            this.updateTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> tickTitlesAndLines(sessionManager), 20L, 20L);
+            // High-frequency tick updater running every 2 ticks (100ms) to update elapsed time without component flicker
+            this.updateTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> tickTitlesAndLines(sessionManager), 2L, 2L);
         }
     }
 
@@ -56,10 +58,14 @@ public class ParkourScoreboardManager {
         registerPlayerName(uuid, player.getName());
         removePlayerBoard(uuid);
 
+        // Bind isolated scoreboard and collision team
+        session.bindPlayerScoreboardAndTeam(player);
+
         try {
             FastBoard board = new FastBoard(player);
             boards.put(uuid, board);
-            refreshSession(session);
+            // Push baseline dummy frames synchronously during initialization
+            refreshPlayerBoard(player, board, session);
         } catch (Throwable ignored) {
             // Safe fallback for headless / mock test environments
         }
@@ -84,18 +90,28 @@ public class ParkourScoreboardManager {
     }
 
     public void refreshSession(ParkourSession session) {
-        List<Component> lines = buildLeaderboardLines(session);
         Component title = buildTitleComponent(session);
 
         for (UUID uuid : session.getActivePlayers()) {
             FastBoard board = boards.get(uuid);
             if (board != null && !board.isDeleted()) {
                 try {
+                    List<Component> playerLines = buildLinesForPlayer(uuid, session);
                     board.updateTitle(title);
-                    board.updateLines(lines);
+                    board.updateLines(playerLines);
                 } catch (Throwable ignored) {
                 }
             }
+        }
+    }
+
+    private void refreshPlayerBoard(Player player, FastBoard board, ParkourSession session) {
+        try {
+            Component title = buildTitleComponent(session);
+            List<Component> playerLines = buildLinesForPlayer(player.getUniqueId(), session);
+            board.updateTitle(title);
+            board.updateLines(playerLines);
+        } catch (Throwable ignored) {
         }
     }
 
@@ -122,6 +138,48 @@ public class ParkourScoreboardManager {
         return LegacyComponentSerializer.legacySection().deserialize("§b§lPARKOUR RACE §7(" + formattedTime + ")");
     }
 
+    /**
+     * Builds per-player scoreboard lines displaying personal metrics (Checkpoints, Falls) and standings.
+     */
+    public List<Component> buildLinesForPlayer(UUID targetUuid, ParkourSession session) {
+        List<Component> lines = new ArrayList<>();
+        lines.add(LegacyComponentSerializer.legacySection().deserialize("§7------------------------"));
+
+        // Personal Metrics
+        int personalCheckpoints = session.getDiscoveredCheckpoints(targetUuid).size();
+        int personalFalls = session.getFallCount(targetUuid);
+        lines.add(LegacyComponentSerializer.legacySection().deserialize("§eCheckpoints: §f" + personalCheckpoints));
+        lines.add(LegacyComponentSerializer.legacySection().deserialize("§eFalls: §f" + personalFalls));
+        lines.add(LegacyComponentSerializer.legacySection().deserialize("§7------------------------"));
+
+        // Match Standings
+        for (UUID uuid : session.getActivePlayers()) {
+            Player p = null;
+            try {
+                p = Bukkit.getPlayer(uuid);
+            } catch (Throwable ignored) {
+            }
+
+            String rawName = (p != null) ? p.getName() : playerNames.getOrDefault(uuid, "Player_" + uuid.toString().substring(0, 4));
+            String name = truncateName(rawName, 14);
+
+            if (session.hasFinished(uuid)) {
+                String splitTime = session.getFormattedFinishTime(uuid);
+                if (splitTime == null) splitTime = "✔";
+                lines.add(LegacyComponentSerializer.legacySection().deserialize("§a" + name + " §7" + splitTime + " §a✔"));
+            } else if (session.isSpectator(uuid) || (p != null && isRGASpectator(p))) {
+                lines.add(LegacyComponentSerializer.legacySection().deserialize("§7" + name + " §8SPECTATING"));
+            } else {
+                int checkpoints = session.getDiscoveredCheckpoints(uuid).size();
+                lines.add(LegacyComponentSerializer.legacySection().deserialize("§f" + name + " §e" + checkpoints));
+            }
+        }
+        return lines;
+    }
+
+    /**
+     * Builds generic leaderboard lines for active players in the session.
+     */
     public List<Component> buildLeaderboardLines(ParkourSession session) {
         List<Component> lines = new ArrayList<>();
         lines.add(LegacyComponentSerializer.legacySection().deserialize("§7------------------------"));

@@ -1,6 +1,7 @@
 package com.ronlab.parkour.listener;
 
 import com.ronlab.parkour.ParkourPlugin;
+import com.ronlab.parkour.config.SpawnVectorParser;
 import com.ronlab.parkour.game.ParkourScoreboardManager;
 import com.ronlab.parkour.game.ParkourSession;
 import com.ronlab.parkour.game.ParkourSessionManager;
@@ -8,6 +9,7 @@ import com.ronlab.rga.api.event.MinigameConcludeEvent;
 import com.ronlab.rga.api.event.MinigameStartEvent;
 import com.ronlab.rga.api.model.MinigameId;
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -50,11 +52,16 @@ public class ParkourLifecycleListener implements Listener {
 
         String worldName = event.getWorldName();
         List<UUID> playerUuids = event.getPlayerUuids();
+        World world = Bukkit.getWorld(worldName);
 
-        ParkourSession session = sessionManager.createSession(worldName, playerUuids, plugin.getKitConfig(), plugin);
+        List<Location> spawnVectors = SpawnVectorParser.loadSpawnVectorsFromWorld(world, plugin.getLogger());
+        if (!spawnVectors.isEmpty()) {
+            plugin.getLogger().info(String.format("[rgaParkour DEBUG] Loaded %d spawn vector(s) from map.yml for world %s", spawnVectors.size(), worldName));
+        }
+
+        ParkourSession session = sessionManager.createSession(worldName, playerUuids, plugin.getKitConfig(), plugin, spawnVectors);
 
         List<Player> playersInWorld = new ArrayList<>();
-        World world = Bukkit.getWorld(worldName);
         if (world != null) {
             for (UUID uuid : playerUuids) {
                 Player player = world.getPlayers().stream()

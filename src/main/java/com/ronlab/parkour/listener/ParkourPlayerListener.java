@@ -6,6 +6,7 @@ import com.ronlab.parkour.game.ParkourSession;
 import com.ronlab.parkour.game.ParkourSessionManager;
 import com.ronlab.rga.RGA;
 import com.ronlab.rga.api.RGASessionControl;
+import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -18,6 +19,8 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.scoreboard.Scoreboard;
+import org.bukkit.scoreboard.ScoreboardManager;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 
@@ -81,6 +84,9 @@ public class ParkourPlayerListener implements Listener {
         // 1. Y-Threshold Fall Interception
         if (to.getY() <= config.getFallThresholdY()) {
             session.applyFailEffects(player);
+            if (scoreboardManager != null) {
+                scoreboardManager.refreshSession(session);
+            }
             return;
         }
 
@@ -93,6 +99,9 @@ public class ParkourPlayerListener implements Listener {
         // 2. Fail block material check (e.g., LAVA, WATER)
         if (config.isFailMaterial(feetMat) || config.isFailMaterial(underMat)) {
             session.applyFailEffects(player);
+            if (scoreboardManager != null) {
+                scoreboardManager.refreshSession(session);
+            }
             return;
         }
 
@@ -118,16 +127,44 @@ public class ParkourPlayerListener implements Listener {
     public void onEntityDamage(EntityDamageEvent event) {
         if (event.getEntity() instanceof Player player) {
             String worldName = player.getWorld().getName();
-            if (sessionManager.hasSession(worldName)) {
+            ParkourSession session = sessionManager.getSession(worldName);
+            if (session != null && session.isActivePlayer(player.getUniqueId())) {
                 event.setCancelled(true);
+
+                // Catch void damage or fatal damage drops to prevent vanilla death routing / default spawn drops
+                if (event.getCause() == EntityDamageEvent.DamageCause.VOID || player.getHealth() - event.getFinalDamage() <= 0) {
+                    if (!session.hasFinished(player.getUniqueId()) && !session.isSpectator(player.getUniqueId())) {
+                        session.applyFailEffects(player);
+                        if (scoreboardManager != null) {
+                            scoreboardManager.refreshSession(session);
+                        }
+                    }
+                }
             }
         }
     }
 
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
+        Player player = event.getPlayer();
         if (scoreboardManager != null) {
-            scoreboardManager.removePlayerBoard(event.getPlayer().getUniqueId());
+            scoreboardManager.removePlayerBoard(player.getUniqueId());
+        }
+
+        String worldName = player.getWorld().getName();
+        ParkourSession session = sessionManager.getSession(worldName);
+        if (session != null) {
+            try {
+                if (session.getTeam() != null) {
+                    session.getTeam().removeEntry(player.getName());
+                }
+                ScoreboardManager sm = Bukkit.getScoreboardManager();
+                Scoreboard mainBoard = (sm != null) ? sm.getMainScoreboard() : null;
+                if (mainBoard != null && player.getScoreboard() == session.getScoreboard()) {
+                    player.setScoreboard(mainBoard);
+                }
+            } catch (Throwable ignored) {
+            }
         }
     }
 
